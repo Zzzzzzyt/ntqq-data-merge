@@ -3,3 +3,5 @@
 **/*.pyo
 
 *_export
+*.7z
+*.zip

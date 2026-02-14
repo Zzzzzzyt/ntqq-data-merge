@@ -4,9 +4,11 @@ import shutil
 import pathlib
 from tqdm import tqdm
 
+from util import get_rich_media_id,bcolors
+
 
 def copy_files(export_path, nt_data_path):
-    print("Calculating size...")
+    print(f"{bcolors.INFO}Calculating size...{bcolors.ENDC}")
     files = []
     for root, dirs, filenames in os.walk(nt_data_path):
         for filename in filenames:
@@ -15,8 +17,8 @@ def copy_files(export_path, nt_data_path):
             files.append((file_path, file_size))
     files.sort(key=lambda x: x[1], reverse=True)
     total_size = sum(file[1] for file in files)
-    print(f"Total size: {total_size / (1024**3):.2f} GiB")
-    proceed = input("Proceed to copy? (y/N)")
+    print(f"{bcolors.OKGREEN}Total size: {total_size / (1024**3):.2f} GiB{bcolors.ENDC}")
+    proceed = input(f"{bcolors.OKBLUE}Proceed to copy? (y/N){bcolors.ENDC}")
     if proceed.lower() == "y":
         with tqdm(total=total_size, unit="B", unit_scale=True) as pbar:
             for file_path, file_size in files:
@@ -52,13 +54,13 @@ def copy_rich_media(export_path):
 
     rows.sort(key=lambda x: x[1], reverse=True)
 
-    print(f"Found {len(rows)} rich media files, total size: {total_size / (1024**3):.2f} GiB")
-    proceed = input("Proceed to copy? (y/N)")
+    print(f"{bcolors.OKGREEN}Found {len(rows)} rich media files, total size: {total_size / (1024**3):.2f} GiB{bcolors.ENDC}")
+    proceed = input(f"{bcolors.OKBLUE}Proceed to copy? (y/N){bcolors.ENDC}")
     if proceed.lower() == "y":
         os.makedirs(os.path.join(export_path, "rich_media/"), exist_ok=True)
         with tqdm(total=total_size, unit="B", unit_scale=True) as pbar:
             for file_path, file_size, file_id in rows:
-                dest_path = os.path.join(export_path, "rich_media/", file_id.replace("/", "_"))
+                dest_path = os.path.join(export_path, "rich_media/", get_rich_media_id(file_id))
                 if not os.path.exists(dest_path):
                     shutil.copy2(file_path, dest_path)
                 pbar.update(file_size)
@@ -67,7 +69,7 @@ def copy_rich_media(export_path):
 if __name__ == "__main__":
     from util import get_ntqq_base_path
 
-    device_name = input("Device name: ")
+    device_name = input(f"{bcolors.OKBLUE}Device name: {bcolors.ENDC}")
 
     base_path = get_ntqq_base_path()
 
