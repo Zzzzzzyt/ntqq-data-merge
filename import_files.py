@@ -3,7 +3,7 @@ import os
 import shutil
 from tqdm import tqdm
 
-from util import get_file_basename, bcolors
+from util import filesize_format, get_file_basename, bcolors
 
 
 def transfer_files(file_list):
@@ -22,10 +22,8 @@ def transfer_files(file_list):
     if len(conflicts) > 0:
         old_size = len(conflicts)
         replace = 0
-        print(f"Found {len(conflicts)} conflicts:")
-        strategy = input(
-            f"{bcolors.OKBLUE}Choose strategy: (s)kip, (o)verwrite, prefer (n)ew, prefer (b)ig: {bcolors.ENDC}"
-        ).lower()
+        print(f"发现 {len(conflicts)} 个冲突:")
+        strategy = input(f"{bcolors.OKBLUE}选择策略：(s)跳过, (o)覆盖, (n)取较新者, (b)取较大者: {bcolors.ENDC}").lower()
         if strategy == "s":
             conflicts = []
             replace = 0
@@ -44,15 +42,15 @@ def transfer_files(file_list):
                     todo.append((src_path, dst_path, src_size))
                     replace += 1
         else:
-            print("Invalid strategy!")
-            exit(1)
-        print(f"{old_size - replace} files skipped, {replace} files to be replaced.")
+            print("无效策略！")
+            raise ValueError("Invalid strategy")
+        print(f"{old_size - replace} 个文件被跳过，{replace} 个文件将被替换。")
     else:
-        print("No conflicts found.")
+        print("未发现冲突。")
 
     total_size = sum(src_size for _, _, src_size in todo)
-    print(f"{len(todo)} files to be transferred, total size: {total_size / (1024**3):.2f} GiB")
-    proceed = input(f"{bcolors.OKBLUE}Proceed to transfer files? (y/N){bcolors.ENDC}")
+    print(f"{len(todo)} 个文件待导入，总大小: {filesize_format(total_size)}")
+    proceed = input(f"{bcolors.OKBLUE}是否继续导入文件？(y/N){bcolors.ENDC}")
     if proceed.lower() == "y":
         with tqdm(total=total_size, unit="B", unit_scale=True) as pbar:
             for src_path, dst_path, src_size in todo:
@@ -63,7 +61,7 @@ def transfer_files(file_list):
 
 
 if __name__ == "__main__":
-    device_name = input(f"{bcolors.OKBLUE}Device name: {bcolors.ENDC}")
+    device_name = input(f"{bcolors.OKBLUE}设备名称: {bcolors.ENDC}")
     import_path = f"{device_name}_export/"
 
     from util import get_ntqq_base_path
@@ -81,7 +79,7 @@ if __name__ == "__main__":
                 s = line.strip()
                 if s != "":
                     file_transfer_plan.add(s)
-        print(f"{bcolors.OKGREEN}Loaded file transfer plan with {len(file_transfer_plan)} files.{bcolors.ENDC}")
+        print(f"{bcolors.OKGREEN}已加载聊天图片导入计划，包含 {len(file_transfer_plan)} 个文件。{bcolors.ENDC}")
         file_list = []
         for root, dirs, files in os.walk(data_path):
             for file in files:
@@ -92,9 +90,9 @@ if __name__ == "__main__":
                     file_list.append((src_path, dst_path))
         transfer_files(file_list)
     else:
-        print(
-            f"{bcolors.WARNING}No file transfer plan found at {file_transfer_plan_path}, skipping file transfer.{bcolors.ENDC}"
-        )
+        print(f"{bcolors.WARNING}未在 {file_transfer_plan_path} 找到聊天图片导入计划，跳过。{bcolors.ENDC}")
+
+    print()
 
     if os.path.exists(rich_media_transfer_plan_path):
         rich_media_transfer_plan = dict()
@@ -103,35 +101,32 @@ if __name__ == "__main__":
                 s = line.strip()
                 if s != "":
                     file_id, path = s.split("\t")
-                    assert file_id not in rich_media_transfer_plan, f"Duplicate file_id {file_id} in rich media transfer plan"
+                    assert file_id not in rich_media_transfer_plan, f"重复的 file_id {file_id}"
                     rich_media_transfer_plan[file_id] = path
 
         rich_media_transfer_plan = sorted(rich_media_transfer_plan.items(), key=lambda x: x[1])
 
         if len(rich_media_transfer_plan) == 0:
-            print(f"{bcolors.WARNING}Rich media transfer plan is empty, skipping rich media transfer.{bcolors.ENDC}")
+            print(f"{bcolors.WARNING}下载文件导入计划为空。{bcolors.ENDC}")
             exit(0)
 
-        print(f"{bcolors.OKGREEN}Loaded rich media transfer plan with {len(rich_media_transfer_plan)} files.{bcolors.ENDC}")
+        print(f"{bcolors.OKGREEN}已加载下载文件导入计划，包含 {len(rich_media_transfer_plan)} 个文件。{bcolors.ENDC}")
         temp_path = os.path.join(import_path, "temp_rich_media/")
-        print("You may copy rich media files to temp folder:")
+        print("稍后你可以选择在以下目录中创建备份:")
         print(f"{bcolors.BOLD}{os.path.abspath(temp_path)}{bcolors.ENDC}")
 
         for file_id, path in rich_media_transfer_plan:
             src_path = os.path.join(import_path, "rich_media/", file_id)
             if not os.path.exists(src_path):
-                print(f"Source file {src_path} does not exist, skipping.")
+                print(f"源文件 {src_path} 不存在，跳过。")
                 continue
             print(f"{bcolors.BOLD}{path}{bcolors.ENDC}")
-            print(f"size: {os.path.getsize(src_path) / (1024**2):.2f} MB")
-            print(f"creation time: {datetime.fromtimestamp(os.path.getctime(src_path))}")
-            print(f"modification time: {datetime.fromtimestamp(os.path.getmtime(src_path))}")
+            print(f"体积: {filesize_format(os.path.getsize(src_path))}")
+            print(f"创建时间: {datetime.fromtimestamp(os.path.getctime(src_path))}")
+            print(f"修改时间: {datetime.fromtimestamp(os.path.getmtime(src_path))}")
             if os.path.exists(path):
-                print(f"{bcolors.WARNING}Note: destination file already exists, will be overwritten!{bcolors.ENDC}")
-                continue
-            proceed = input(
-                f"{bcolors.OKBLUE}Proceed to transfer this rich media file? (y)es/(N)o/(c)opy to temp folder: {bcolors.ENDC}"
-            ).lower()
+                print(f"{bcolors.WARNING}目标文件已存在，将被覆盖！{bcolors.ENDC}")
+            proceed = input(f"{bcolors.OKBLUE}复制该文件? (y)是/(N)否/(c)创建备份: {bcolors.ENDC}").lower()
             if proceed == "y":
                 os.makedirs(os.path.dirname(path), exist_ok=True)
                 shutil.copy2(src_path, path)
@@ -140,6 +135,4 @@ if __name__ == "__main__":
                 shutil.copy2(src_path, os.path.join(temp_path, os.path.basename(path)))
             print()
     else:
-        print(
-            f"{bcolors.WARNING}No rich media transfer plan found at {rich_media_transfer_plan_path}, skipping rich media transfer.{bcolors.ENDC}"
-        )
+        print(f"{bcolors.WARNING}未在 {rich_media_transfer_plan_path} 找到下载文件导入计划，跳过下载文件导入。{bcolors.ENDC}")

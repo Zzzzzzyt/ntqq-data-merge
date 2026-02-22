@@ -41,6 +41,17 @@ DB_INFO = {
 }
 
 
+def filesize_format(size):
+    if size < 1024:
+        return f"{size}B"
+    elif size < 1024**2:
+        return f"{size / 1024:.3f}KiB"
+    elif size < 1024**3:
+        return f"{size / (1024**2):.3f}MiB"
+    else:
+        return f"{size / (1024**3):.3f}GiB"
+
+
 def get_documents_folder():
     # Source - https://stackoverflow.com/a/30924555
     # Posted by axil, modified by community. See post 'Timeline' for change history
@@ -58,21 +69,28 @@ def get_documents_folder():
 
 
 def get_ntqq_base_path():
-    base = os.path.join(get_documents_folder(), "Tencent Files")
+    base = input(
+        f"{bcolors.OKBLUE}如果你手动修改了NTQQ数据目录路径（通常在 文档/Tencent Files/），请输入新的路径（留空则使用默认路径）: {bcolors.ENDC}"
+    ).strip()
+
+    if base == "":
+        base = os.path.join(get_documents_folder(), "Tencent Files")
+        print(f"{bcolors.INFO}使用路径: {base}{bcolors.ENDC}")
+
     arr = []
     for number in os.listdir(base):
         if number.isdigit():
             arr.append(number)
     if len(arr) == 0:
-        raise Exception("No account found in Tencent Files")
+        raise Exception("未找到账号文件夹！")
     elif len(arr) > 1:
         for i, number in enumerate(arr):
             print(f"{i}: {number}")
-        index = int(input("Multiple qq accounts found. Please select the index of the folder to use: "))
-        assert 0 <= index < len(arr), "Invalid index"
+        index = int(input(f"{bcolors.OKBLUE}找到多个QQ账号文件夹，请选择要使用的文件夹索引: {bcolors.ENDC}"))
+        assert 0 <= index < len(arr), "索引无效！"
         return os.path.join(base, arr[index])
     else:
-        print(f"Found account {arr[0]} in Tencent Files")
+        print(f"找到唯一的账号 {arr[0]}")
         return os.path.join(base, arr[0])
 
 
@@ -97,14 +115,14 @@ def input_time(prompt):
         if time_str != "":
             time = int(datetime.strptime(time_str, "%Y-%m-%d").timestamp())
     except Exception as e:
-        print("Invalid date format!")
+        print("错误的时间格式！")
         raise e
     return time
 
 
 def decrypt(dbpath, dbfile, key):
     if os.path.exists(dbfile):
-        print(f"{bcolors.WARNING}{dbfile} already exists, skipping decryption.{bcolors.ENDC}")
+        print(f"{bcolors.WARNING}{dbfile} 已存在，跳过解密{bcolors.ENDC}")
         return
 
     tempfile = dbfile.replace(".db", ".clean.db")
@@ -154,17 +172,17 @@ def decrypt(dbpath, dbfile, key):
     os.remove(tempfile)
 
     filesize = os.path.getsize(dbfile)
-    print(f"{bcolors.OKGREEN}Decrypted {dbfile}, size: {filesize / (1024**2):.2f} MB{bcolors.ENDC}")
+    print(f"{bcolors.OKGREEN}已解密 {dbfile}, 体积: {filesize_format(filesize)}{bcolors.ENDC}")
 
 
 def encrypt(dbpath, dbfile, key):
-    print(f"{bcolors.INFO}Encrypting {dbfile}...{bcolors.ENDC}")
+    print(f"{bcolors.INFO}正在加密 {dbfile}...{bcolors.ENDC}")
 
     backup_path = dbpath.replace(".db", ".backup.db")
 
-    assert os.path.exists(dbpath), f"{dbpath} does not exist!"
+    assert os.path.exists(dbpath), f"{dbpath} 不存在！"
     if os.path.exists(backup_path):
-        print(f"{bcolors.FAIL}{backup_path} already exists! Please delete backup file before proceeding.{bcolors.ENDC}")
+        print(f"{bcolors.FAIL}备份文件 {backup_path} 已存在！请先删除备份文件再继续{bcolors.ENDC}")
         exit(1)
 
     shutil.copy(dbpath, backup_path)
@@ -197,6 +215,4 @@ def encrypt(dbpath, dbfile, key):
     if os.path.exists(tempfile):
         os.remove(tempfile)
 
-    print(
-        f"{bcolors.OKGREEN}Encrypted {dbfile} successfully!\nBackup of original database is saved as {backup_path}{bcolors.ENDC}"
-    )
+    print(f"{bcolors.OKGREEN}已成功加密 {dbfile} \n原数据库备份于 {backup_path}{bcolors.ENDC}")

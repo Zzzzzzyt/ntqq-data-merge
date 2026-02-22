@@ -5,16 +5,16 @@ from util import DB_INFO, bcolors, get_ntqq_base_path, encrypt, decrypt
 
 if __name__ == "__main__":
     print(
-        f"{bcolors.BOLD}{bcolors.WARNING}This script will inject triggers (or remove, if already injected) into your NTQQ databases{bcolors.ENDC}"
+        f"{bcolors.BOLD}{bcolors.WARNING}该脚本将向你的NTQQ数据库注入重建FTS5触发器（或在已注入时，移除触发器）{bcolors.ENDC}"
     )
-    print(f"{bcolors.BOLD}{bcolors.WARNING}send:{bcolors.ENDC}")
-    print(f"__trigger_fts_rebuild__")
     print(
-        f"{bcolors.BOLD}{bcolors.WARNING}in the corresponding chat to trigger a rebuild (may lag NTQQ for a while){bcolors.ENDC}"
+        f"{bcolors.BOLD}{bcolors.WARNING}在对应的聊天类型中发送该消息以触发重建（可能会使QQ卡顿一段时间）{bcolors.ENDC}"
     )
+    print(f"__trigger_fts_rebuild__")
+    print()
 
     base_path = get_ntqq_base_path()
-    key = input(f"{bcolors.OKBLUE}key: {bcolors.ENDC}")
+    key = input(f"{bcolors.OKBLUE}数据库密钥: {bcolors.ENDC}")
     os.makedirs("trigger_temp", exist_ok=True)  # create temp folder for modified databases
     for file in os.listdir("trigger_temp"):
         os.remove(os.path.join("trigger_temp", file))  # clear temp folder
@@ -38,12 +38,12 @@ if __name__ == "__main__":
                 "SELECT name FROM sqlite_master WHERE type='trigger' AND name='rebuild_trigger'"
             ).fetchone()
             if trigger_exist is None:
-                print(f"rebuild trigger {bcolors.BOLD}does not exist{bcolors.ENDC} in {dbname}")
+                print(f"{dbname} 中 {bcolors.BOLD}不存在{bcolors.ENDC} 触发器")
                 proceed = input(
-                    f"{bcolors.OKBLUE}Do you want to {bcolors.BOLD}create{bcolors.ENDC}{bcolors.OKBLUE} it? (y/N): {bcolors.ENDC}"
+                    f"{bcolors.OKBLUE}要{bcolors.BOLD}注入{bcolors.ENDC}{bcolors.OKBLUE}触发器吗? (y/N): {bcolors.ENDC}"
                 )
                 if proceed.lower() != "y":
-                    print(f"{bcolors.WARNING}Skipping trigger creation for {dbname}{bcolors.ENDC}")
+                    print(f"{bcolors.WARNING}跳过{dbname}{bcolors.ENDC}")
                     conn.close()
                     os.remove(temp_path)
                     continue
@@ -57,12 +57,12 @@ if __name__ == "__main__":
                 """
                 )
             else:
-                print(f"rebuild trigger {bcolors.BOLD}already exists{bcolors.ENDC} in {dbname}")
+                print(f"{dbname} 中 {bcolors.BOLD}已存在{bcolors.ENDC} 触发器")
                 proceed = input(
-                    f"{bcolors.OKBLUE}Do you want to {bcolors.BOLD}remove{bcolors.ENDC}{bcolors.OKBLUE} it? (y/N): {bcolors.ENDC}"
+                    f"{bcolors.OKBLUE}要{bcolors.BOLD}移除{bcolors.ENDC}{bcolors.OKBLUE}该触发器吗? (y/N): {bcolors.ENDC}"
                 )
                 if proceed.lower() != "y":
-                    print(f"{bcolors.WARNING}Keeping existing trigger for {dbname}{bcolors.ENDC}")
+                    print(f"{bcolors.WARNING}保留现有触发器{bcolors.ENDC}")
                     conn.close()
                     os.remove(temp_path)
                     continue

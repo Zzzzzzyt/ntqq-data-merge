@@ -1,5 +1,57 @@
-# NTQQ History Merger
+# NTQQ 聊天记录导出/合并/写入
 
-Please get your sqlcipher key with [ntdb_unwrap](https://github.com/artiga033/ntdb_unwrap)
+导出/合并/写入NTQQ聊天记录和本地文件
 
-reference: [https://qqbackup.github.io/QQDecrypt/](https://qqbackup.github.io/QQDecrypt/)
+参考文献: [https://qqbackup.github.io/QQDecrypt/](https://qqbackup.github.io/QQDecrypt/)
+
+NTQQ的FTS5全文搜索用了专有的`pinyin_letter` tokenizer，没法离线重建，只能SQLite注入一个触发器让QQ自己重建了😅
+
+附赠小工具`export_fav_emoji.py`，可以导出收藏的表情，不需要解密数据库🤓👍
+
+## 使用方法
+
+暂时只支持Windows，有意向者可以实现其他OS支持。
+
+**请保证硬盘空间足够！**
+
+**请保证从导出之前到导入完成之后QQ都不在运行！！**
+
+**数据损坏等后果自负！！！**
+
+0. 用 [ntdb_unwrap](https://github.com/artiga033/ntdb_unwrap) （或其他神秘手法）获取密钥。
+
+1. `git clone` 本项目，`pip install -r requirements.txt` 安装依赖。
+
+2. 在*要导出的设备*上运行 `export.py`，输入密钥，给你的设备取一个名字，等待解密完成。导出的数据库会保存在 `<你输入的设备名>_export` 文件夹中。
+
+3. （可选）在*要导出的设备*上运行 `export_files.py`，导出本地文件（可能很多，可以自行删除不需要的文件）。导出的文件会保存在 `<你输入的设备名>_export` 文件夹中。
+
+4. 想办法将`<你输入的设备名>_export`传输到*要导入的设备*上，并放在项目目录下。
+
+5. 在*要导入的设备*上运行 `export.py`，输入密钥，给你的设备取另一个名字，等待解密完成。
+
+6. 在*要导入的设备*上运行 `merge.py`，输入你取的两个设备名，合并结果会直接写入`<合并目标>_export`，同时生成需要传输的文件写入`<合并源>_export/*.txt`。
+
+7. 在*要导入的设备*上运行 `import.py`，输入密钥，输入合并后的设备名，重新加密写入NTQQ数据目录。 **（请再次保证QQ不在运行！）（做好备份，造成数据损坏后果自负！！！）**
+
+8. 打开QQ，确认数据没有损坏。此时聊天记录本身已经导入完成；删除NTQQ数据目录下的`*.backup.db`备份文件。
+
+9. 在*要导入的设备*上运行 `inject_rebuild_trigger.py`，输入密钥，注入重建触发器。 **（请再次保证QQ不在运行！）（做好备份，造成数据损坏后果自负！！！）**
+
+10. 在文件传输助手、任意私聊、任意群聊中各发送一次`__trigger_fts_rebuild__`，触发全文搜索索引重建。 **（可能会使QQ卡顿一段时间）**
+
+11. 确认新合并的聊天记录也可以搜索到；删除NTQQ数据目录下的`*.backup.db`备份文件
+
+12. 在*要导入的设备*上运行 `inject_rebuild_trigger.py`，输入密钥，删除重建触发器。 **（请再次保证QQ不在运行！）（做好备份，造成数据损坏后果自负！！！）**
+
+13. 打开QQ，确认数据没有损坏；删除NTQQ数据目录下的`*.backup.db`备份文件
+
+14. （可选）在*要导入的设备*上运行 `import_files.py`，输入**合并源**设备名，将之前导出的文件复制到本地NTQQ图片数据目录。
+
+15. 打开QQ，检查导入的聊天记录中图片是否能显示
+
+16. WIN! 🎉🎉🎉
+
+## 实现原理
+
+自己读代码吧😅，也就SQLite注入部分逆天一点

@@ -4,11 +4,11 @@ import shutil
 import pathlib
 from tqdm import tqdm
 
-from util import get_rich_media_id, bcolors
+from util import filesize_format, get_rich_media_id, bcolors
 
 
 def copy_files(export_path, nt_data_path):
-    print(f"{bcolors.INFO}Calculating size...{bcolors.ENDC}")
+    print(f"{bcolors.INFO}正在计算文件体积...{bcolors.ENDC}")
     files = []
     for root, dirs, filenames in os.walk(nt_data_path):
         for filename in filenames:
@@ -17,8 +17,8 @@ def copy_files(export_path, nt_data_path):
             files.append((file_path, file_size))
     files.sort(key=lambda x: x[1], reverse=True)
     total_size = sum(file[1] for file in files)
-    print(f"{bcolors.OKGREEN}Total size: {total_size / (1024**3):.2f} GiB{bcolors.ENDC}")
-    proceed = input(f"{bcolors.OKBLUE}Proceed to copy? (y/N){bcolors.ENDC}")
+    print(f"{bcolors.OKGREEN}找到 {len(files)} 个文件，总体积: {filesize_format(total_size)}{bcolors.ENDC}")
+    proceed = input(f"{bcolors.OKBLUE}开始导出? (y/N){bcolors.ENDC}")
     if proceed.lower() == "y":
         with tqdm(total=total_size, unit="B", unit_scale=True) as pbar:
             for file_path, file_size in files:
@@ -32,7 +32,7 @@ def copy_files(export_path, nt_data_path):
 
 def copy_rich_media(export_path):
     rich_media_db = os.path.join(export_path, "nt_db/rich_media.db")
-    assert os.path.exists(rich_media_db), "rich_media.db not found. Please export nt_db first."
+    assert os.path.exists(rich_media_db), "未找到rich_media.db，请先运行export.py导出nt_db目录"
     conn = sqlite3.connect(rich_media_db)
     cursor = conn.cursor()
 
@@ -54,8 +54,8 @@ def copy_rich_media(export_path):
 
     rows.sort(key=lambda x: x[1], reverse=True)
 
-    print(f"{bcolors.OKGREEN}Found {len(rows)} rich media files, total size: {total_size / (1024**3):.2f} GiB{bcolors.ENDC}")
-    proceed = input(f"{bcolors.OKBLUE}Proceed to copy? (y/N){bcolors.ENDC}")
+    print(f"{bcolors.OKGREEN}找到 {len(rows)} 个下载的文件，总体积: {filesize_format(total_size)}{bcolors.ENDC}")
+    proceed = input(f"{bcolors.OKBLUE}开始导出? (y/N){bcolors.ENDC}")
     if proceed.lower() == "y":
         os.makedirs(os.path.join(export_path, "rich_media/"), exist_ok=True)
         with tqdm(total=total_size, unit="B", unit_scale=True) as pbar:
@@ -69,12 +69,16 @@ def copy_rich_media(export_path):
 if __name__ == "__main__":
     from util import get_ntqq_base_path
 
-    device_name = input(f"{bcolors.OKBLUE}Device name: {bcolors.ENDC}")
+    device_name = input(f"{bcolors.OKBLUE}设备名称: {bcolors.ENDC}")
 
     base_path = get_ntqq_base_path()
 
     export_path = f"{device_name}_export/"
     nt_data_path = os.path.join(base_path, "nt_qq/nt_data/")
 
+    print(f"{bcolors.INFO}准备导出聊天图片/音频...{bcolors.ENDC}")
     copy_files(export_path, nt_data_path)
+
+    print()
+    print(f"{bcolors.INFO}准备导出下载的文件...{bcolors.ENDC}")
     copy_rich_media(export_path)
