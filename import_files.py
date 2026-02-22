@@ -56,9 +56,9 @@ def transfer_files(file_list):
     if proceed.lower() == "y":
         with tqdm(total=total_size, unit="B", unit_scale=True) as pbar:
             for src_path, dst_path, src_size in todo:
-                # os.makedirs(os.path.dirname(dst_path), exist_ok=True)
-                # if not os.path.exists(dst_path):
-                #     shutil.copy2(src_path, dst_path)
+                os.makedirs(os.path.dirname(dst_path), exist_ok=True)
+                if not os.path.exists(dst_path):
+                    shutil.copy2(src_path, dst_path)
                 pbar.update(src_size)
 
 
@@ -133,9 +133,8 @@ if __name__ == "__main__":
                 f"{bcolors.OKBLUE}Proceed to transfer this rich media file? (y)es/(N)o/(c)opy to temp folder: {bcolors.ENDC}"
             ).lower()
             if proceed == "y":
-                pass
-                # os.makedirs(os.path.dirname(path), exist_ok=True)
-                # shutil.copy2(src_path, path)
+                os.makedirs(os.path.dirname(path), exist_ok=True)
+                shutil.copy2(src_path, path)
             elif proceed == "c":
                 os.makedirs(temp_path, exist_ok=True)
                 shutil.copy2(src_path, os.path.join(temp_path, os.path.basename(path)))

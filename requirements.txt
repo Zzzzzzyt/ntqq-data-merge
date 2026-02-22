@@ -1,2 +1,3 @@
 tqdm
 sqlcipher3
+filetype

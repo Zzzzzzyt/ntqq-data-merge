@@ -44,7 +44,64 @@ def get_table_info(conn, table_name):
     return columns, autoinc_columns, pk_column
 
 
-def merge_db(src_db, dst_db, dbinfo, start_time=None, end_time=None, close_session=True):
+def merge_uid_mapping(src_path, dst_path):
+    print(f"{bcolors.INFO}Merging nt_uid_mapping_table...{bcolors.ENDC}")
+
+    src_db = os.path.join(src_path, "nt_db/", "nt_msg.db")
+    dst_db = os.path.join(dst_path, "nt_db/", "nt_msg.db")
+
+    conn = sqlite3.connect(src_db)
+    conn.execute("PRAGMA synchronous=OFF")
+    conn.execute("PRAGMA temp_store=MEMORY")
+    conn.execute("PRAGMA journal_mode=OFF")
+    src_mapping = conn.execute('SELECT "48901","48902","48912","1002" FROM nt_uid_mapping_table').fetchall()
+    conn.close()
+
+    src_mapping_dict = {row[1]: row for row in src_mapping}  # nt_uid -> (local_id, nt_uid, nt_uid2, old_uid)
+    if len(src_mapping_dict) != len(src_mapping):
+        print(f"{bcolors.WARNING}Warning: duplicate nt_uid(48902) found in source mapping???{bcolors.ENDC}")
+
+    conn = sqlite3.connect(dst_db)
+    conn.execute("PRAGMA synchronous=OFF")
+    conn.execute("PRAGMA temp_store=MEMORY")
+    conn.execute("PRAGMA journal_mode=OFF")
+    dst_mapping = conn.execute('SELECT "48901","48902","48912","1002" FROM nt_uid_mapping_table').fetchall()
+    dst_mapping_dict = {row[1]: row for row in dst_mapping}  # nt_uid -> (local_id, nt_uid, nt_uid2, old_uid)
+    if len(dst_mapping_dict) != len(dst_mapping):
+        print(f"{bcolors.WARNING}Warning: duplicate nt_uid(48902) found in destination mapping???{bcolors.ENDC}")
+
+    max_localid = conn.execute('SELECT MAX("48901") FROM nt_uid_mapping_table').fetchone()[0]
+    current_localid = max_localid
+    src2dst_localid_map = {}
+    to_insert = []
+    for src_localid, nt_uid, nt_uid2, old_uid in src_mapping:
+        if nt_uid not in dst_mapping_dict:
+            current_localid += 1
+            src2dst_localid_map[src_localid] = current_localid
+            to_insert.append((current_localid, nt_uid, nt_uid2, old_uid))
+        else:
+            dst_localid = dst_mapping_dict[nt_uid][0]
+            src2dst_localid_map[src_localid] = dst_localid
+
+    if to_insert:
+        print(f"{bcolors.OKBLUE}Inserting {len(to_insert)} new uid mappings into destination...{bcolors.ENDC}")
+        proceed = input(f"{bcolors.OKBLUE}Proceed to insert? (Y/n){bcolors.ENDC}")
+        if proceed.lower() != "n":
+            conn.executemany('INSERT INTO nt_uid_mapping_table ("48901","48902","48912","1002") VALUES (?,?,?,?)', to_insert)
+            print(f"{bcolors.OKGREEN}Inserted {len(to_insert)} new uid mappings into destination{bcolors.ENDC}")
+        else:
+            print(f"{bcolors.WARNING}Skipping insertion of new uid mappings.{bcolors.ENDC}")
+            raise Exception("User aborted uid mapping insertion.")
+
+    conn.commit()
+    conn.close()
+
+    print(f"{bcolors.OKGREEN}Merged nt_uid_mapping_table, {len(src2dst_localid_map)} new local_id mapped{bcolors.ENDC}")
+
+    return src2dst_localid_map
+
+
+def merge_db(src_db, dst_db, dbinfo, src2dst_localid_map, start_time=None, end_time=None, close_session=True):
     print()
     print(f"{bcolors.INFO}Merging {src_db} into {dst_db}...{bcolors.ENDC}")
 
@@ -52,6 +109,13 @@ def merge_db(src_db, dst_db, dbinfo, start_time=None, end_time=None, close_sessi
     conn.execute("PRAGMA synchronous=OFF")
     conn.execute("PRAGMA temp_store=MEMORY")
     conn.execute("PRAGMA journal_mode=OFF")
+    triggers = None
+    if src_db.endswith("fts.db"):
+        # save triggers
+        triggers = conn.execute("SELECT name, sql FROM sqlite_master WHERE type='trigger'").fetchall()
+        for trigger_name, _ in triggers:
+            conn.execute(f"DROP TRIGGER IF EXISTS {trigger_name}")
+
     try:
         conn.execute("ATTACH DATABASE ? AS src_db", (src_db,))
         for table_name, dedupe_columns in dbinfo.items():
@@ -75,6 +139,12 @@ def merge_db(src_db, dst_db, dbinfo, start_time=None, end_time=None, close_sessi
                 conn.execute(f"CREATE INDEX IF NOT EXISTS {index_name} ON {table_name} ({', '.join(dedupe_columns)})")
 
                 conn.execute(f"CREATE TEMP TABLE {temp_table_name} AS {select_sql}")
+
+                if '"40027"' in columns:
+                    # special handling for local_id in message tables
+                    for src_localid, dst_localid in src2dst_localid_map.items():
+                        conn.execute(f'UPDATE {temp_table_name} SET "40027" = ? WHERE "40027" = ?', (dst_localid, src_localid))
+
                 rows_to_insert = conn.execute(f"SELECT COUNT(*) FROM {temp_table_name}").fetchone()[0]
                 # print(conn.execute(f"SELECT * FROM {temp_table_name} LIMIT 5").fetchall())
                 if rows_to_insert:
@@ -100,6 +170,9 @@ def merge_db(src_db, dst_db, dbinfo, start_time=None, end_time=None, close_sessi
                 if close_session:
                     conn.execute(f"DROP TABLE IF EXISTS {temp_table_name}")
 
+        if triggers is not None:
+            for trigger_name, trigger_sql in triggers:
+                conn.execute(trigger_sql)
         conn.commit()
     except Exception as e:
         print(f"{bcolors.FAIL}Error merging {src_db} into {dst_db}: {e}{bcolors.ENDC}")
@@ -112,31 +185,12 @@ def merge_db(src_db, dst_db, dbinfo, start_time=None, end_time=None, close_sessi
         return conn
 
 
-if __name__ == "__main__":
-    src_device = input(f"{bcolors.OKBLUE}Source device name: {bcolors.ENDC}")
-    dst_device = input(f"{bcolors.OKBLUE}Destination device name: {bcolors.ENDC}")
-    src_path = f"{src_device}_export/"
-    dst_path = f"{dst_device}_export/"
-    assert os.path.exists(src_path), f"Source path {src_path} does not exist"
-    assert os.path.exists(dst_path), f"Destination path {dst_path} does not exist"
-
-    print("You may specify a time range in merge source.")
-    start_time = input_time(f"{bcolors.OKBLUE}Start time (YYYY-MM-DD, empty for no limit): {bcolors.ENDC}")
-    end_time = input_time(f"{bcolors.OKBLUE}End time (YYYY-MM-DD, empty for no limit): {bcolors.ENDC}")
-
-    for dbname in ["nt_msg.db", "buddy_msg_fts.db", "data_line_msg_fts.db", "discuss_msg_fts.db", "group_msg_fts.db"]:
-        merge_db(
-            os.path.join(src_path, "nt_db/", dbname),
-            os.path.join(dst_path, "nt_db/", dbname),
-            DB_INFO[dbname],
-            start_time=start_time,
-            end_time=end_time,
-        )
-
+def merge_files_in_chat(src_path, dst_path, src2dst_localid_map, start_time=None, end_time=None):
     conn = merge_db(
         os.path.join(src_path, "nt_db/", "files_in_chat.db"),
         os.path.join(dst_path, "nt_db/", "files_in_chat.db"),
         DB_INFO["files_in_chat.db"],
+        src2dst_localid_map,
         start_time=start_time,
         end_time=end_time,
         close_session=False,
@@ -162,10 +216,13 @@ if __name__ == "__main__":
     conn.execute("DROP TABLE temp_insert_files_in_chat_table")
     conn.close()
 
+
+def merge_rich_media(src_path, dst_path, src2dst_localid_map, start_time=None, end_time=None):
     conn = merge_db(
         os.path.join(src_path, "nt_db/", "rich_media.db"),
         os.path.join(dst_path, "nt_db/", "rich_media.db"),
         DB_INFO["rich_media.db"],
+        src2dst_localid_map,
         start_time=start_time,
         end_time=end_time,
         close_session=False,
@@ -193,6 +250,36 @@ if __name__ == "__main__":
 
     conn.execute("DROP TABLE temp_insert_file_table")
     conn.close()
+
+
+if __name__ == "__main__":
+    src_device = input(f"{bcolors.OKBLUE}Source device name: {bcolors.ENDC}")
+    dst_device = input(f"{bcolors.OKBLUE}Destination device name: {bcolors.ENDC}")
+    src_path = f"{src_device}_export/"
+    dst_path = f"{dst_device}_export/"
+    assert os.path.exists(src_path), f"Source path {src_path} does not exist"
+    assert os.path.exists(dst_path), f"Destination path {dst_path} does not exist"
+
+    print("You may specify a time range in merge source.")
+    start_time = input_time(f"{bcolors.OKBLUE}Start time (YYYY-MM-DD, empty for no limit): {bcolors.ENDC}")
+    end_time = input_time(f"{bcolors.OKBLUE}End time (YYYY-MM-DD, empty for no limit): {bcolors.ENDC}")
+
+    src2dst_localid_map = merge_uid_mapping(src_path, dst_path)
+
+    for dbname in DB_INFO.keys():
+        if dbname in ["files_in_chat.db", "rich_media.db"]:
+            continue  # handle separately due to file transfer plan
+        merge_db(
+            os.path.join(src_path, "nt_db/", dbname),
+            os.path.join(dst_path, "nt_db/", dbname),
+            DB_INFO[dbname],
+            src2dst_localid_map,
+            start_time=start_time,
+            end_time=end_time,
+        )
+
+    merge_files_in_chat(src_path, dst_path, src2dst_localid_map, start_time=start_time, end_time=end_time)
+    merge_rich_media(src_path, dst_path, src2dst_localid_map, start_time=start_time, end_time=end_time)
 
     print()
     print(f"{bcolors.INFO}Checking integrity of merged databases...{bcolors.ENDC}")

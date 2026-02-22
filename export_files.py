@@ -4,7 +4,7 @@ import shutil
 import pathlib
 from tqdm import tqdm
 
-from util import get_rich_media_id,bcolors
+from util import get_rich_media_id, bcolors
 
 
 def copy_files(export_path, nt_data_path):

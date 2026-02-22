@@ -1,5 +1,8 @@
 from datetime import datetime
 import os
+import shutil
+import traceback
+from sqlcipher3 import dbapi2 as sqlcipher
 
 
 class bcolors:
@@ -24,9 +27,9 @@ DB_INFO = {
         "group_at_me_msg": ['"40001"', '"40050"'],  # msgId  # msgTime
         "dataline_msg_table": ['"40002"', '"40050"'],  # msgRandom  # msgTime
         "discuss_msg_table": ['"40002"', '"40050"'],  # msgRandom  # msgTime
-        "nt_kv_storage_table": ['"48901"'],  # key
+        # "nt_kv_storage_table": ['"48901"'],  # key
         "pai_yi_pai_msg_id_table": ['"48901"'],  # key
-        "nt_uid_mapping_table": ['"48902"', '"48912"', '"1002"'],  # uid  # uid2  # old_uid
+        # "nt_uid_mapping_table": ['"48902"', '"48912"', '"1002"'],  # uid  # uid2  # old_uid
         # "recent_contact_v3_table": ["40021"],  # uid
     },
     "files_in_chat.db": {"files_in_chat_table": ['"82300"', '"40050"']},  # msgRandom  # msgTime
@@ -97,3 +100,103 @@ def input_time(prompt):
         print("Invalid date format!")
         raise e
     return time
+
+
+def decrypt(dbpath, dbfile, key):
+    if os.path.exists(dbfile):
+        print(f"{bcolors.WARNING}{dbfile} already exists, skipping decryption.{bcolors.ENDC}")
+        return
+
+    tempfile = dbfile.replace(".db", ".clean.db")
+    with open(dbpath, "rb") as f:
+        f.seek(1024)  # 跳过前1024字节
+        with open(tempfile, "wb") as tempf:
+            tempf.write(f.read())  # 将剩余部分写入临时文件
+
+    # create new plaintext database
+    # db2 = sqlite3.connect(dbfile)  # type: ignore
+    # db2.commit()
+    # db2.close()
+
+    conn = sqlcipher.connect(tempfile)  # type: ignore
+    try:
+        conn.execute(f"PRAGMA key = '{key}';")
+        # db.execute(f"PRAGMA cipher_page_size = 4096;")
+        conn.execute(f"PRAGMA kdf_iter = 4000;")
+        conn.execute(f"PRAGMA cipher_hmac_algorithm = HMAC_SHA1;")
+        conn.execute(f"PRAGMA cipher_default_kdf_algorithm = PBKDF2_HMAC_SHA512;")
+        conn.execute("PRAGMA synchronous=OFF")
+        conn.execute("PRAGMA temp_store=MEMORY")
+        conn.execute("PRAGMA journal_mode=OFF")
+        # db.execute(f"PRAGMA cipher = 'aes-256-cbc';")
+        conn.execute(f"ATTACH DATABASE '{dbfile}' AS plaintext KEY '';")
+        conn.execute(f"SELECT sqlcipher_export('plaintext');")
+        conn.execute(f"DETACH DATABASE plaintext;")
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        conn.close()
+        if os.path.exists(tempfile):
+            os.remove(tempfile)
+        if os.path.exists(dbfile):
+            os.remove(dbfile)
+        traceback.print_exc()
+        raise e
+
+    # print tables
+    # conn = sqlite3.connect(dbfile)  # type: ignore
+    # cursor = conn.cursor()
+    # cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
+    # tables = cursor.fetchall()
+    # print(f"Tables in {dbfile}: {[table[0] for table in tables]}")
+    # conn.close()
+
+    os.remove(tempfile)
+
+    filesize = os.path.getsize(dbfile)
+    print(f"{bcolors.OKGREEN}Decrypted {dbfile}, size: {filesize / (1024**2):.2f} MB{bcolors.ENDC}")
+
+
+def encrypt(dbpath, dbfile, key):
+    print(f"{bcolors.INFO}Encrypting {dbfile}...{bcolors.ENDC}")
+
+    backup_path = dbpath.replace(".db", ".backup.db")
+
+    assert os.path.exists(dbpath), f"{dbpath} does not exist!"
+    if os.path.exists(backup_path):
+        print(f"{bcolors.FAIL}{backup_path} already exists! Please delete backup file before proceeding.{bcolors.ENDC}")
+        exit(1)
+
+    shutil.copy(dbpath, backup_path)
+
+    tempfile = dbfile.replace(".db", ".encrypt.db")
+    if os.path.exists(tempfile):
+        os.remove(tempfile)
+
+    conn = sqlcipher.connect(dbfile)  # type: ignore
+    conn.execute(f"ATTACH DATABASE '{tempfile}' AS encrypted KEY '{key}';")
+    conn.execute(f"PRAGMA encrypted.kdf_iter = 4000;")
+    conn.execute(f"PRAGMA encrypted.cipher_hmac_algorithm = HMAC_SHA1;")
+    conn.execute(f"PRAGMA encrypted.cipher_default_kdf_algorithm = PBKDF2_HMAC_SHA512;")
+    conn.execute("PRAGMA synchronous=OFF")
+    conn.execute("PRAGMA temp_store=MEMORY")
+    conn.execute("PRAGMA journal_mode=OFF")
+    conn.execute(f"SELECT sqlcipher_export('encrypted');")
+    conn.execute(f"DETACH DATABASE encrypted;")
+    conn.commit()
+    conn.close()
+
+    header = None
+    with open(dbpath, "rb") as f:
+        header = f.read(1024)
+    with open(dbpath, "wb") as f:
+        f.write(header)
+        with open(tempfile, "rb") as tempf:
+            shutil.copyfileobj(tempf, f)
+
+    if os.path.exists(tempfile):
+        os.remove(tempfile)
+
+    print(
+        f"{bcolors.OKGREEN}Encrypted {dbfile} successfully!\nBackup of original database is saved as {backup_path}{bcolors.ENDC}"
+    )
